@@ -1,0 +1,17 @@
+#!/bin/bash
+set -x
+
+DEV=eth0
+export DEV
+
+tc qdisc del dev $DEV root
+tc qdisc del dev $DEV root
+tc qdisc add dev $DEV root handle 1: cbq avpkt 1000 bandwidth 100mbit
+
+# setup a class to limit to 1500 kilobits/s
+tc class add dev $DEV parent 1: classid 1:1 cbq rate 1500kbit \
+   allot 1500 prio 5 bounded isolated
+
+# add traffic from 10.2.1.37 to that class
+tc filter add dev $DEV parent 1: protocol ip prio 16 u32 \
+   match ip src 10.2.1.37 flowid 1:1
