@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Get user variables
+echo "Enter the IP Address for the collector: "
+read collip
+
+echo "Enter the subnet bit count (e.g. enter 24 for a /24 network): "
+read collprefix
+
+echo "Enter the gateway of the server: "
+read collgw
+
+echo "Enter the hostname of the server: "
+read collhostname
+
+hostname $collhostname
+
+# Install the tools and utilities required by the collector
+yum -y install wget bind-utils nano nmap perl net-tools traceroute openssh-server openssh-clients
+
+# Turn the SSH service on
+chkconfig sshd on
+service sshd start
+
+# Create the bonded NIC using NIC 2 & 3
+printf "DEVICE=bond0\nNAME=bond0\nTYPE=Bond\nBONDING_MASTER=yes\nIPADDR=$collip\nPREFIX=$collprefix\nGATEWAY\nONBOOT=yes\nBOOTPROTO=none\nBONDING_OPTS='mode=0 miimon=100'" > /etc/sysconfig/network-scripts/ifcfg-bond0
+
+# Modify the existing NICs to act as slaves for the bond
+printf "\nMASTER=bond0\nSLAVE=yes" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f2
+printf "\nMASTER=bond0\nSLAVE=yes" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
+sed "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f2
+sed "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
+sed "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f2
+sed "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
+
+# Set a static IP for HN Management
+sed "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+sed "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+printf "\nIPADDR=192.168.10.10\nPREFIX=24" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+
+# Restart networking to reflect the changes
