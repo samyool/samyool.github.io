@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# Declare the empty arrays for the DNS and NTP servers
+dnsservers=()
+ntpservers=()
+
+# Get the input variables from the user
+echo "Enter the IP Address of the collector: "
+read collip
+
+echo "Enter the subnet bit count (e.g. enter 24 for a /24 network): "
+read collprefix
+
+echo "Enter the gateway of the collector: "
+read collgw
+
+echo "Enter the number of DNS servers"
+read numdns
+
+for ((i=1; i<=$numdns; i++))
+do
+    echo "Enter the IP of DNS server number $i"
+    read temp
+    dnsservers+=($temp)
+done
+
+echo "Enter the number of NTP servers"
+read numntp
+
+for ((i=1; i<=$numntp; i++))
+do
+        echo "Enter the IP of NTP server number $i"
+        read temp
+        ntpservers+=($temp)
+done
+
+echo "Enter the hostname of the collector: "
+read collhostname
+
+hostname $collhostname
+printf "$collhostname.localdomain" > /etc/hostname
+
+# Install the tools and utilities required by the collector
+yum -y update
+yum -y install wget bind-utils nano nmap perl net-tools traceroute openssh-server openssh-clients ntp net-snmp net-snmp-utils
+
+# Enable the SSH service to turn on at boot. Disbale DNS security for SSH
+sed -i 's/#useDNS.*/useDNS no/g' /etc/ssh/sshd_config
+chkconfig sshd on
+service sshd start
+
+# Enable the SNMP service to turn on at boot. Set the community string
+chkconfig snmpd on
+printf "rocommunity public" > /etc/snmp/snmp.conf
+
+# Create the bonded NIC using NIC 2 & 3
+printf "DEVICE=bond0\nNAME=bond0\nTYPE=Bond\nBONDING_MASTER=yes\nIPADDR=$collip\nPREFIX=$collprefix\nGATEWAY=$collgw\nONBOOT=yes\nBOOTPROTO=none\nBONDING_OPTS='mode=1 miimon=100'\n" > /etc/sysconfig/network-scripts/ifcfg-bond0
+
+# Modify the existing NICs to act as slaves for the bond
+printf "MASTER=bond0\nSLAVE=yes\n" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f2
+printf "MASTER=bond0\nSLAVE=yes\n" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
+sed -i "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f2
+sed -i "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
+sed -i "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f2
+sed -i "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
+
+# Set a static IP for HN Management
+sed -i "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+sed -i "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+printf "IPADDR=192.168.10.10\nPREFIX=24\n" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+
+# Properly configure DNS & NTP (remember to enable the NTP service)
+for ((i=1; i<=$numdns; i++))
+do
+	printf "DNS$i=${dnsservers[$i-1]}\n" >> /etc/sysconfig/network-scripts/ifcfg-bond0
+done
+
+for ((i=1; i<=$numntp; i++))
+do
+        printf "server=${ntpservers[$i-1]}\n" >> /etc/ntp.conf
+done
+
+chkconfig ntpd on
+
+# Restart networking to reflect the changes
+service network restart
