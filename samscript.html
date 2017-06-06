@@ -45,7 +45,7 @@ yum -y update
 yum -y install wget bind-utils nano nmap perl net-tools traceroute openssh-server openssh-clients ntp net-snmp net-snmp-utils
 
 # Enable the SSH service to turn on at boot. Disbale DNS security for SSH
-sed -i 's/#useDNS.*/useDNS no/g' /etc/ssh/sshd_config
+sed -i 's/#UseDNS.*/UseDNS no/g' /etc/ssh/sshd_config
 chkconfig sshd on
 service sshd start
 
@@ -67,17 +67,20 @@ sed -i "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f3
 # Set a static IP for HN Management
 sed -i "s/BOOTPROTO.*/BOOTPROTO=none/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
 sed -i "s/ONBOOT.*/ONBOOT=yes/g" /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
-printf "IPADDR=192.168.10.10\nPREFIX=24\n" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
+printf "IPADDR=192.168.100.1\nPREFIX=24\n" >> /etc/sysconfig/network-scripts/ifcfg-enp0s20f1
 
-# Properly configure DNS & NTP (remember to enable the NTP service)
+# Add the DNS servers to the bonded NIC
 for ((i=1; i<=$numdns; i++))
 do
 	printf "DNS$i=${dnsservers[$i-1]}\n" >> /etc/sysconfig/network-scripts/ifcfg-bond0
 done
 
+# Remove default NTP servers. Add customer NTP servers to the NTP configuration file and enable NTP on boot (remove the public NTP servers)
+sed '^server.*/d' /etc/ntp.conf
+
 for ((i=1; i<=$numntp; i++))
 do
-        printf "server=${ntpservers[$i-1]}\n" >> /etc/ntp.conf
+	printf "server ${ntpservers[$i-1]}\n" >> /etc/ntp.conf
 done
 
 chkconfig ntpd on
